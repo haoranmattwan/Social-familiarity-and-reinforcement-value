@@ -1,0 +1,239 @@
+\documentclass[fleqn]{article}
+\setlength\parindent{0pt}
+\usepackage{fullpage} 
+\usepackage{dcolumn}
+\usepackage{fixltx2e}
+\usepackage{amsmath}
+\usepackage{scrextend}
+\usepackage[sc]{mathpazo}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+\setcounter{secnumdepth}{5}
+\setcounter{tocdepth}{5}
+\usepackage{url}
+\usepackage[unicode=true,pdfusetitle,
+            bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+            breaklinks=false,pdfborder={0 0 1},backref=false,colorlinks=false]
+{hyperref}
+\hypersetup{
+  pdfstartview={XYZ null null 1}}
+\usepackage{breakurl}
+\usepackage{amsfonts}
+\usepackage[dvips]{epsfig}
+\usepackage{algorithm2e}
+\usepackage{verbatim}
+\usepackage{IEEEtrantools}
+\usepackage{mathtools}
+\usepackage{scrextend}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{numprint}
+\graphicspath{ {images/} }
+\newcolumntype{L}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+\newcolumntype{C}[1]{>{\centering\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+\begin{document}
+\title{Social Familiarity and Reward Value \\ Result}
+\author{Haoran Wan}
+\date{11 May 2023}
+\maketitle
+
+\section{Preliminaries}
+
+\subsection{Clear the Console Panes and Load Packages}
+<<tidy=TRUE>>=
+options(replace.assign=TRUE,width=65, digits=4,scipen=4,fig.width=4,fig.height=4)
+# Clear the workspace and console.
+rm(list = ls(all.names = TRUE)) 
+cat("\014")
+# Turn off showing of significance asterisks.
+options(show.signif.stars=F)
+# Set the contrast option; the sum contrast is required for ANOVA.
+options(contrasts = c('contr.sum','contr.poly'))
+how_long <- Sys.time()
+set.seed(01222023)
+library(knitr)
+@
+
+\subsection{Packages}
+<<message=FALSE>>=
+library(minpack.lm)
+library(readr)
+library(nlme)
+library(scales)
+library(nlstools)
+library(lemon)
+library(fastDummies)
+library(multcomp)
+library(broom)
+library(modelr)
+library(ggpubr)
+library(tidyverse)
+library(here)
+@
+
+\subsection{Get the Data}
+<<tidy=TRUE,message=FALSE,warning=FALSE>>=
+# Get the data from the working directory.
+setwd(here("code"))
+source("Function.R")
+source("Data.R")
+@
+
+\clearpage
+
+\section{Demand Curve Analyses}
+
+\textbf{\large{\textit{
+The following analyses were conducted to fit the demand data with the Zero-Bounded Exponential model (Gilroy et al., 2021).  
+}}}
+
+\subsection{Individual Level}
+
+\subsubsection{Model Fitting and Prediction}
+<<tidy=TRUE,message=FALSE,warning=FALSE>>=
+# Model Parameter Data Frame
+r2_grp_raw <- matrix(NA, nrow = 24, ncol = 1) 
+par_zbm_raw <- as.data.frame(matrix(NA, nrow = 4, ncol = 30)) %>%
+  `colnames<-`(c("alpha_familiar_10sec","alpha_familiar_30sec","alpha_familiar_60sec","alpha_unfamiliar_10sec","alpha_unfamiliar_30sec","alpha_unfamiliar_60sec",
+                 "Q0_familiar_10sec","Q0_familiar_30sec","Q0_familiar_60sec","Q0_unfamiliar_10sec","Q0_unfamiliar_30sec","Q0_unfamiliar_60sec",
+                 "EV_familiar_10sec","EV_familiar_30sec","EV_familiar_60sec","EV_unfamiliar_10sec","EV_unfamiliar_30sec","EV_unfamiliar_60sec",
+                 "Pmax_familiar_10sec","Pmax_familiar_30sec","Pmax_familiar_60sec","Pmax_unfamiliar_10sec","Pmax_unfamiliar_30sec","Pmax_unfamiliar_60sec",
+                 "Omax_familiar_10sec","Omax_familiar_30sec","Omax_familiar_60sec","Omax_unfamiliar_10sec","Omax_unfamiliar_30sec","Omax_unfamiliar_60sec")) 
+glht_p_raw <- as.data.frame(matrix(NA, nrow = 4, ncol = 4)) %>%
+  `colnames<-`(c("a: F vs. UnF","Q0: F vs. UnF","a: Cond","Q0: Cond"))
+# Define Linear Contrast
+lc_matrix <- matrix(c(1,1,1,-1,-1,-1,0,0,0,0,0,0,
+                      0,0,0,0,0,0,1,1,1,-1,-1,-1), nc = 12, byrow = T)
+# Model Prediction Data Frame
+pred_df <- tibble(fr = rep(seq(min(dat$fr),max(dat$fr),.1), times = 6), 
+                  cond = rep(c("f1", "f3", "f6", "u1", "u3", "u6"), each = length(seq(min(dat$fr), max(dat$fr), .1)))) %>%
+  dummy_cols(select_columns = "cond", remove_selected_columns = T) %>%
+  `colnames<-`(c("fr", "f1", "f3", "f6", "u1", "u3", "u6"))
+# R2 for Demand Curve Fitting
+for (x in 1:24) {
+  r2_grp_raw[x,] <- rsquare(nlsLM(lq ~ lhs(q_0) * (exp((-exp(alpha) / lhs(q_0)) * (q_0) * fr)),
+                                  data = subset(dat, id == x),  start = list(alpha = -6, q_0 = 50), 
+                                  control = list(maxfev = 100000, maxiter = 1024)), 
+                            data = subset(dat, id == x))
+}
+r2_grp <- r2_grp_raw %>% as.data.frame() %>% mutate(id = 1:n()) %>%
+  full_join(dat %>% group_by(id, cond) %>%  summarise(across(.cols = c(pair,f,u), mean)), by = "id") %>%
+  mutate(cond = case_when(cond == "10 Sec" & f == 1 ~ "R2_familiar_10sec",
+                          cond == "30 Sec" & f == 1 ~ "R2_familiar_30sec",
+                          cond == "60 Sec" & f == 1 ~ "R2_familiar_60sec",
+                          cond == "10 Sec" & u == 1 ~ "R2_unfamiliar_10sec",
+                          cond == "30 Sec" & u == 1 ~ "R2_unfamiliar_30sec",
+                          cond == "60 Sec" & u == 1 ~ "R2_unfamiliar_60sec")) %>%
+  select(-c(id,f,u)) %>% pivot_wider(names_from = cond, values_from = V1)
+# Subject Level Parameter
+for (x in 1:4) {
+  # Model 1: Unique alpha and Q_0 parameters for each social familiarity and duration.  
+  model1 <- nlsLM(lq ~ lhs(qf1*f1+qf3*f3+qf6*f6 + qu1*u1+qu3*u3+qu6*u6) * 
+        (exp((-exp((af1*f1+af3*f3+af6*f6 + au1*u1+au3*u3+au6*u6)) / 
+                lhs(qf1*f1+qf3*f3+qf6*f6 + qu1*u1+qu3*u3+qu6*u6)) * 
+               (qf1*f1+qf3*f3+qf6*f6 + qu1*u1+qu3*u3+qu6*u6) * fr)), 
+      data = subset(dat, pair == x), 
+      start = list(af1 = -6, af3 = -6, af6 = -6, au1 = -6, au3 = -6, au6 = -6, 
+                   qf1 = 50, qf3 = 50, qf6 = 50, qu1 = 50, qu3 = 50, qu6 = 50),
+      control = list(maxfev = 100000, maxiter = 1024))
+  # Model 2: Unique Q_0 parameter for each social familiarity and duration.  
+  model2 <- nlsLM(lq ~ lhs(qf1*f1+qf3*f3+qf6*f6 + qu1*u1+qu3*u3+qu6*u6) * (exp((-exp((af*f + au*u)) / lhs(qf1*f1+qf3*f3+qf6*f6 + qu1*u1+qu3*u3+qu6*u6)) * (qf1*f1+qf3*f3+qf6*f6 + qu1*u1+qu3*u3+qu6*u6) * fr)), 
+      data = subset(dat, pair == x), 
+      start = list(af = -6, au = -6, qf1 = 50, qf3 = 50, qf6 = 50, qu1 = 50, qu3 = 50, qu6 = 50),
+      control = list(maxfev = 100000, maxiter = 1024))
+  # Model 3: Unique alpha parameter for each social familiarity and duration.  
+  model3 <- nlsLM(lq ~ lhs(qf*f + qu*u) * (exp((-exp((af1*f1+af3*f3+af6*f6 + au1*u1+au3*u3+au6*u6)) / lhs(qf*f + qu*u)) * (qf*f + qu*u) * fr)), 
+      data = subset(dat, pair == x), 
+      start = list(af1 = -6, af3 = -6, af6 = -6, au1 = -6, au3 = -6, au6 = -6, qf = 50, qu = 50),
+      control = list(maxfev = 100000, maxiter = 1024))
+  par_zbm_raw[x,c(1:12)] <- coef(model1)
+  par_zbm_raw[x,c(1:6)] <- exp(par_zbm_raw[x,c(1:6)])
+  par_zbm_raw[x,c(13:18)] <- ev(par_zbm_raw[x,c(1:6)])
+  new_df <- mutate(pred_df, epred = predict(model1,pred_df),
+                            pred_cons = antilog(epred),
+                            pred_resp = pred_cons*fr) %>% 
+    group_by(f1,f3,f6,u1,u3,u6) %>%
+    filter(pred_resp == max(pred_resp))
+  par_zbm_raw[x,c(19:24)] <- new_df$fr
+  par_zbm_raw[x,c(25:30)] <- new_df$pred_resp
+  glht_p_raw[x,c(1,2)] <- tidy(glht(model1, linfct = lc_matrix, alternative = "two.sided", rhs = 0), test = adjusted("none"))$p.value
+  glht_p_raw[x,c(3)] <- anova(model1,model2)$`Pr(>F)`[2]
+  glht_p_raw[x,c(4)] <- anova(model1,model3)$`Pr(>F)`[2]
+}
+glht_p <- glht_p_raw %>% 
+  rownames_to_column() %>%
+  pivot_longer(names_to = "name", values_to = "p",cols = -rowname) %>%
+  mutate(p = p.adjust(p,method = "holm")) %>%
+  pivot_wider(names_from = name,values_from = p) %>%
+  select(-rowname)
+par_zbm <- par_zbm_raw  %>%
+  mutate(pair = c(1:4)) %>%
+  relocate(pair) %>%
+  full_join(r2_grp, by = "pair")
+
+print(par_zbm) # Demand Curve Parameters
+print(glht_p) # Linear Contrast Outputs
+@
+
+\subsection{Group Level Parameter Comparison}
+
+\textbf{\large{\textit{
+The following analyses were conducted to compare the values of demand curve parameters across different conditions (social duration and social familarity) using linear contrasts.  
+}}}
+
+\subsubsection{Social Familiarity}
+<<tidy=TRUE,message=FALSE,warning=FALSE>>=
+lc_fmlr <- nlsLM(lq ~ lhs(qf*f + qu*u) * (exp((-exp((af*f + au*u)) / lhs(qf*f + qu)) * (qf*f + qu) * fr)), 
+                 data = dat %>% select(-cond) %>% group_by(pair,fmlr,fr) %>% summarise_all(mean), 
+                 start = list(af = -6, au = -6, qf = 50, qu = 50))
+summary(glht(lc_fmlr, linfct = matrix(c(1,-1,0,0,0,0,1,-1), nc = 4,byrow=T) %>% 
+                                 `rownames<-`(c("familiarity: alpha", "familiarity: Q0")), 
+             alternative = "two.sided", rhs = 0), test = adjusted("none"))
+@
+
+\subsubsection{Social Duration}
+<<tidy=TRUE>>=
+model1 <- nlsLM(lq ~ lhs(q1*cond_f1+q3*cond_f2+q6*cond_f3) * 
+        (exp((-exp((a1*cond_f1+a3*cond_f2+a6*cond_f3)) / lhs(q1*cond_f1+q3*cond_f2+q6*cond_f3)) * (q1*cond_f1+q3*cond_f2+q6*cond_f3) * fr)), 
+      data = dat %>% select(-fmlr) %>% 
+                mutate(cond = case_when(cond=="10 Sec" ~ "f1",cond=="30 Sec" ~ "f2",cond=="60 Sec" ~ "f3")) %>% 
+                dummy_cols(select_columns = c("cond")) %>% group_by(pair,cond,fr) %>% summarise_all(mean), 
+      start = list(a1 = -6, a3 = -6, a6 = -6,  q1 = 50, q3 = 50, q6 = 50),
+      control = list(maxfev = 100000, maxiter = 1024))
+model2 <- nlsLM(lq ~ lhs(q) * (exp((-exp((a1*cond_f1+a3*cond_f2+a6*cond_f3)) / lhs(q)) * (q) * fr)), 
+      data = dat %>% select(-fmlr) %>% 
+                mutate(cond = case_when(cond=="10 Sec" ~ "f1",cond=="30 Sec" ~ "f2",cond=="60 Sec" ~ "f3")) %>% 
+                dummy_cols(select_columns = c("cond")) %>% group_by(pair,cond,fr) %>% summarise_all(mean), 
+      start = list(a1 = -6, a3 = -6, a6 = -6,  q = 50),
+      control = list(maxfev = 100000, maxiter = 1024))
+model3 <- nlsLM(lq ~ lhs(q1*cond_f1+q3*cond_f2+q6*cond_f3) * (exp((-exp((a)) / lhs(q1*cond_f1+q3*cond_f2+q6*cond_f3)) * (q1*cond_f1+q3*cond_f2+q6*cond_f3) * fr)), 
+                data = dat %>% select(-fmlr) %>% 
+                          mutate(cond = case_when(cond=="10 Sec" ~ "f1",cond=="30 Sec" ~ "f2",cond=="60 Sec" ~ "f3")) %>% 
+                          dummy_cols(select_columns = c("cond")) %>% group_by(pair,cond,fr) %>% summarise_all(mean), 
+                start = list(a = -6,  q1 = 50, q3 = 50, q6 = 50),
+                control = list(maxfev = 100000, maxiter = 1024))
+# Alpha
+anova(model1, model3) 
+# Q0
+anova(model1, model2) 
+@
+
+\clearpage
+
+<<tidy=TRUE>>=
+# Get system details.
+S <- benchmarkme::get_sys_details()
+GB <- memuse::Sys.meminfo()
+@
+\textbf{\large{\textit{
+The current machine uses the following CPU: \Sexpr{S$cpu$model_name}, with \Sexpr{S$cpu$no_of_cores} cores and \Sexpr{GB$totalram} of RAM. 
+}}}
+
+<<tidy=TRUE>>=
+sessionInfo()
+Sys.time()-how_long 
+@
+\end{document}
